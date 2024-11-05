@@ -1,0 +1,26 @@
+# Node modules
+node_modules/
+
+# TypeScript build output
+dist/
+
+# Uploads video files
+uploads/
+
+# Environment variables
+.env
+
+# Logs
+*.log
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+
+# npm-debug and yarn-error logs
+npm-debug.log*
+yarn-error.log*

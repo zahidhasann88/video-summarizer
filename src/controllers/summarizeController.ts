@@ -1,33 +1,57 @@
-import { Request, Response } from 'express';
+// controllers/summarizeController.ts
+import { Request, Response, NextFunction } from 'express';
 import { extractAudio } from '../services/audioExtractionService';
 import { transcribeAudio } from '../services/sttService';
 import { summarizeText } from '../services/summarizationService';
 import { renderSummaryOnVideo } from '../services/videoRenderingService';
+import { ApiException } from '../middleware/errorHandler';
+import fs from 'fs/promises';
 import path from 'path';
-import fs from 'fs';
 
-export async function summarizeVideo(req: Request, res: Response): Promise<void> {
-  const videoPath = req.file?.path;
-  if (!videoPath) {
-    res.status(400).json({ error: 'No video file provided' });
-    return;
+export async function summarizeVideo(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const videoFile = req.file;
+  if (!videoFile) {
+    throw new ApiException('NO_VIDEO_FILE', 'No video file provided', 400);
   }
 
+  const filePaths: string[] = [videoFile.path];
   try {
-    const audioPath = await extractAudio(videoPath);
+    // Extract audio
+    const audioPath = await extractAudio(videoFile.path);
+    filePaths.push(audioPath);
+
+    // Transcribe audio to text
     const transcription = await transcribeAudio(audioPath);
+
+    // Generate summary
     const summary = await summarizeText(transcription);
-    const summarizedVideoPath = await renderSummaryOnVideo(videoPath, summary);
 
-    // Clean up the audio file
-    if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+    // Render summary on video
+    const summaryVideoPath = await renderSummaryOnVideo(videoFile.path, summary);
+    filePaths.push(summaryVideoPath);
 
-    res.json({ summary, summarizedVideoPath });
+    res.json({
+      success: true,
+      data: {
+        transcription,
+        summary,
+        videoPath: summaryVideoPath,
+      },
+    });
   } catch (error) {
-    console.error('Error in summarizeVideo:', error);
-    res.status(500).json({ error: 'An error occurred while summarizing the video' });
+    next(error);
   } finally {
-    // Clean up the uploaded video file
-    if (videoPath && fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+    // Clean up files
+    await Promise.all(
+      filePaths.map((filePath) =>
+        fs.unlink(filePath).catch((err) => 
+          console.error(`Failed to delete file ${filePath}:`, err)
+        )
+      )
+    );
   }
 }

@@ -74,3 +74,5 @@ The server will start on port 5000 (default). You can change the port in the con
 |----------------|-----------------------------------------|
 | `PORT`         | Port on which the server will run      |
 | `OPENAI_API_KEY`  | your_openai_api_key           |
+| `UPLOAD_DIR`   | Directory for storing uploaded files    |
+| `MAX_FILE_SIZE`| Maximum allowed file size in bytes      |

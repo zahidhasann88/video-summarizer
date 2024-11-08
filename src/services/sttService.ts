@@ -1,12 +1,14 @@
+// services/sttService.ts
+import { config } from '../config';
 import axios from 'axios';
-import fs from 'fs';
 import FormData from 'form-data';
-import { OPENAI_API_KEY } from '../config';
+import fs from 'fs';
+import { ApiException } from '../middleware/errorHandler';
 
 export async function transcribeAudio(audioPath: string): Promise<string> {
   const formData = new FormData();
   formData.append('file', fs.createReadStream(audioPath));
-  formData.append('model', 'whisper-1');
+  formData.append('model', config.openai.whisperModel);
 
   try {
     const response = await axios.post(
@@ -14,14 +16,27 @@ export async function transcribeAudio(audioPath: string): Promise<string> {
       formData,
       {
         headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          Authorization: `Bearer ${config.openai.apiKey}`,
           ...formData.getHeaders(),
         },
       }
     );
+
+    if (!response.data.text) {
+      throw new ApiException(
+        'TRANSCRIPTION_FAILED',
+        'Failed to get transcription from OpenAI',
+        500
+      );
+    }
+
     return response.data.text;
   } catch (error) {
-    console.error('Error in transcribeAudio:', error);
-    throw new Error('Audio transcription failed');
+    throw new ApiException(
+      'TRANSCRIPTION_ERROR',
+      'Error transcribing audio',
+      500,
+      error
+    );
   }
 }

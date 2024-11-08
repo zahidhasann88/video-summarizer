@@ -1,25 +1,51 @@
+// services/summarizationService.ts
+import { config } from '../config';
 import axios from 'axios';
-import { OPENAI_API_KEY } from '../config';
+import { ApiException } from '../middleware/errorHandler';
 
 export async function summarizeText(text: string): Promise<string> {
   try {
     const response = await axios.post(
-      'https://api.openai.com/v1/completions',
+      'https://api.openai.com/v1/chat/completions',
       {
-        model: 'text-davinci-003',
-        prompt: `Summarize the following text:\n\n${text}`,
-        max_tokens: 150,
-        temperature: 0.5,
+        model: config.openai.model,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a professional video summarizer. Create concise, engaging summaries.',
+          },
+          {
+            role: 'user',
+            content: `Please summarize the following video transcript in a clear and concise way:\n\n${text}`,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 500,
       },
       {
         headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          Authorization: `Bearer ${config.openai.apiKey}`,
+          'Content-Type': 'application/json',
         },
       }
     );
-    return response.data.choices[0].text.trim();
+
+    const summary = response.data.choices[0]?.message?.content;
+    if (!summary) {
+      throw new ApiException(
+        'SUMMARIZATION_FAILED',
+        'Failed to generate summary',
+        500
+      );
+    }
+
+    return summary.trim();
   } catch (error) {
-    console.error('Error in summarizeText:', error);
-    throw new Error('Text summarization failed');
+    throw new ApiException(
+      'SUMMARIZATION_ERROR',
+      'Error summarizing text',
+      500,
+      error
+    );
   }
 }

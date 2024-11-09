@@ -1,7 +1,11 @@
-import ffmpeg from 'fluent-ffmpeg';
+import { exec } from 'child_process';
 import path from 'path';
 import fs from 'fs/promises';
+import { promisify } from 'util';
 import { ApiException } from '../middleware/errorHandler';
+import ffmpeg from '@ffmpeg-installer/ffmpeg';
+
+const execAsync = promisify(exec);
 
 export async function renderSummaryOnVideo(
   videoPath: string,
@@ -11,40 +15,34 @@ export async function renderSummaryOnVideo(
     path.dirname(videoPath),
     'summary_' + path.basename(videoPath)
   );
-
-  // Split summary into lines of maximum 50 characters
-  const lines = summary.split(' ').reduce((acc: string[], word: string) => {
-    if (!acc.length) return [word];
-    const lastLine = acc[acc.length - 1];
-    if (lastLine.length + word.length + 1 <= 50) {
-      acc[acc.length - 1] = `${lastLine} ${word}`;
-    } else {
-      acc.push(word);
-    }
-    return acc;
-  }, []);
-
-  const drawTextFilters = lines.map((line, index) => 
-    `drawtext=text='${line}':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:boxborderw=5:x=(w-text_w)/2:y=h-(${lines.length - index}*30)-30`
-  ).join(',');
+  const ffmpegPath = ffmpeg.path;
 
   try {
-    await new Promise<void>((resolve, reject) => {
-      ffmpeg(videoPath)
-        .videoFilters(drawTextFilters)
-        .on('end', (stdout: string | null, stderr: string | null) => {
-          resolve();
-        })
-        .on('error', (err: Error) => {
-          reject(new ApiException(
-            'VIDEO_RENDERING_ERROR',
-            'Error rendering video: ' + err.message,
-            500,
-            err
-          ));
-        })
-        .save(outputPath);
-    });
+    const lines = summary.split(' ').reduce((acc: string[], word: string) => {
+      if (!acc.length) return [word];
+      const lastLine = acc[acc.length - 1];
+      if (lastLine.length + word.length + 1 <= 50) {
+        acc[acc.length - 1] = `${lastLine} ${word}`;
+      } else {
+        acc.push(word);
+      }
+      return acc;
+    }, []);
+
+    const drawTextFilters = lines
+      .map((line, index) => {
+        const escapedText = line.replace(/['"]/g, '\\"');
+        return `drawtext=text='${escapedText}':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:boxborderw=5:x=(w-text_w)/2:y=h-(${lines.length - index}*30)-30`;
+      })
+      .join(',');
+
+    const command = `"${ffmpegPath}" -i "${videoPath}" -vf "${drawTextFilters}" -c:a copy "${outputPath}"`;
+
+    const { stderr } = await execAsync(command);
+
+    if (stderr && !stderr.toLowerCase().includes('video:')) {
+      console.warn('FFmpeg stderr:', stderr);
+    }
 
     const exists = await fs.access(outputPath)
       .then(() => true)
@@ -59,13 +57,10 @@ export async function renderSummaryOnVideo(
     }
 
     return outputPath;
-  } catch (error) {
-    if (error instanceof ApiException) {
-      throw error;
-    }
+  } catch (error: any) {
     throw new ApiException(
       'VIDEO_RENDERING_ERROR',
-      'Error rendering summary on video',
+      `Error rendering summary on video: ${error.message}`,
       500,
       error
     );
